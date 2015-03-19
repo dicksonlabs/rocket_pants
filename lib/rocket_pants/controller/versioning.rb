@@ -22,7 +22,11 @@ module RocketPants
     def version
       if !instance_variable_defined?(:@version)
         @version = begin
-          version = extract_version_string_with_prefix params[:version], request.symbolized_path_parameters[:rp_prefix]
+          if Rails.version >= "4.2.0"
+            version = extract_version_string_with_prefix params[:version], request.path_parameters[:rp_prefix]
+          else
+            version = extract_version_string_with_prefix params[:version], request.symbolized_path_parameters[:rp_prefix]
+          end
           version.presence && Integer(version)
         rescue ArgumentError
           nil
