@@ -24,7 +24,7 @@ module RocketPants
         @version = begin
           if Rails.version >= "4.2.0"
             debugger
-            version = extract_version_string_with_prefix params[:version], request.path_parameters[:rp_prefix]
+            version = extract_version_string_with_prefix params[:version], request.path_parameters.symbolize_keys[:rp_prefix]
           else
             version = extract_version_string_with_prefix params[:version], request.symbolized_path_parameters[:rp_prefix]
           end
