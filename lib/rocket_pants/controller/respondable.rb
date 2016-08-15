@@ -62,11 +62,19 @@ module RocketPants
     end
 
     def self.normalise_object(object, options = {})
+      # So we don't use the wrong options / modify them up the chain...
+      options = options.dup
+
       # First, prepare the object for serialization.
       object = normalise_to_serializer object, options
+
       # Convert the object using a standard grape-like lookup chain.
-      if object.is_a?(Array) || object.is_a?(Set)
-        object.map { |o| normalise_object o, options }
+      if object.respond_to?(:to_ary) || object.is_a?(Set) || (options[:each_serializer] && !options[:serializer])
+        suboptions = options.dup
+        if each_serializer = suboptions.delete(:each_serializer)
+          suboptions[:serializer] = each_serializer
+        end
+        object.map { |o| normalise_object o, suboptions }
       elsif object.respond_to?(:serializable_hash)
         object.serializable_hash options
       elsif object.respond_to?(:as_json)
@@ -79,7 +87,8 @@ module RocketPants
     def self.normalise_to_serializer(object, options)
       return object unless RocketPants.serializers_enabled?
       serializer = options.delete(:serializer)
-      serializer = object.active_model_serializer if object.respond_to?(:active_model_serializer) && serializer.nil?
+      # AMS overrides active_model_serializer, so we ignore it and tell it to go away, generally...
+      serializer = object.active_model_serializer if object.respond_to?(:active_model_serializer) && serializer.nil? && !object.respond_to?(:to_ary)
       return object unless serializer
       SerializerWrapper.new serializer, object
     end
@@ -127,6 +136,7 @@ module RocketPants
 
     def respond_with_object_and_type(object, options, type, singular)
       pre_process_exposed_object object, type, singular
+      options = options.reverse_merge(:singular => singular)
       options = options.reverse_merge(:compact => true) unless singular
       meta = expose_metadata metadata_for(object, options, type, singular)
       render_json({:response => normalise_object(object, options)}.merge(meta), options)

@@ -14,13 +14,13 @@ Why use RocketPants over alternatives like Grape or normal Rails? The reasons we
 
 1. **[It's opinionated](#working-with-data)** (like Grape) - In this case, we dictate a certain JSON structure we've found nice to work with (after having worked with and investigated a large number of other apis), it makes it simple to add metadata along side requests and the like.
 2. **[Simple and Often Automatic Response Metadata](#collections)** - RocketPants automatically takes care of sending metadata about paginated responses and arrays where possible. This means as a user, you only need to worry about writing `expose object_or_presenter` in your controller and RocketPants will do it's best to send as much information back to the user.
-3. **[Extended Error Support](#registering--dealing-with-errors)** - RocketPants has a built in framework to manage errors it knows how to handle (in the forms of mapping exceptions to a well defined JSON structure) as well as tools to make it simple to hook up to Airbrake and do things such as including an error identifier in the response.
+3. **[Extended Error Support](#registering--dealing-with-errors)** - RocketPants has a built in framework to manage errors it knows how to handle (in the forms of mapping exceptions to a well defined JSON structure) as well as tools to make it [simple to hook up to Airbrake](#tracking-errors-w-airbrake-honeybadger-or-bugsnag) and do things such as including an error identifier in the response.
 4. **[It's built on ActionPack](#general-structure)** - One of the key differentiators to Grape is that RocketPants embraces ActionPack and uses the modular components included from Rails 3.0 onwards to provide things you're familiar with already such as filters. If you're using Strong Parameters (e.g. in Rails 4), we'll even give you support for that.
 5. **[Semi-efficient Caching Support](#implementing-efficient-validation)** - Thanks to a combination of Rails middleware and collection vs. resource distinctions, RocketPants makes it relatively easy to implement "Efficient Validation" (See [here](#implementing-efficient-validation)). As a developer, this means you get even more benefits of http caching where possible, without the need to generate full requests when etags are present.
 6. **[Simple tools to consume RocketPants apis](#example-client-code)** - RocketPants includes the `RocketPants::Client` class which builds upon [APISmith](https://github.com/Sutto/api_smith) to make it easier to build clients e.g. automatically converting paginated responses back.
 7. **[Built-in Header Metadata Support](#header-metadata)** - APIs can easily expose `Link:` headers (it's even partly built-in for paginated data - see below), and request metadata (e.g. Object count, etc.) can easily be embedded in the headers of the response, making useful `HEAD` requests.
 8. **[Out of the Box ActiveRecord mapping](#built-in-activerecord-errors)** - We'll automatically take care of mapping `ActiveRecord::RecordNotFound`, `ActiveRecord::RecordNotSaved` and `ActiveRecord::RecordInvalid` for you, even including validation messages where possible.
-9. **[Support for active_model_serializers](https://github.com/rails-api/active_model_serializers)** - If you want to use ActiveModelSerializers, we'll take care of it. Even better, in your expose call, pass through `:serializer` as expected and we'll automatically take care of invoking it for you.
+9. **[Support for active_model_serializers](https://github.com/rails-api/active_model_serializers)** - If you want to use ActiveModelSerializers, we'll take care of it. Even better, in your expose call, pass through `:serializer` as expected (or `:each_serializer`) and we'll automatically take care of invoking it for you.
 
 ## Examples
 
@@ -43,7 +43,7 @@ class FoodsController < RocketPants::Base
 
   version 1
 
-  # The list of foods is paginated for 5 minutes, the food itself is cached
+  # The list of foods is cached for 5 minutes, the food itself is cached
   # until it's modified (using Efficient Validation)
   caches :index, :show, :cache_for => 5.minutes
 
@@ -79,8 +79,8 @@ And then, using this example, hitting `GET http://localhost:3000/1/foods` would 
   }],
   "count": 2,
   "pagination": {
-    "previous": nil,
-    "next":     nil,
+    "previous": null,
+    "next":     null,
     "current":  1,
     "per_page": 10,
     "count":    2,
@@ -200,7 +200,7 @@ And added our own:
 * `RocketPants::Instrumentation` - Adds Instrumentation notifications making it easy to use and hook into with Rails.
 * `RocketPants::Caching` - Implements time-based caching for index actions and etag-based efficient validation for singular resources.
 * `RocketPants::ErrorHandling` - Short hand to create errors as well as simplifications to catch and render a standardised error representation.
-* `RocketPants::Rescuable` - Allows you to hook in to rescuing exceptions and to make it easy to post notifications to tools such as AirBrake.
+* `RocketPants::Rescuable` - Allows you to hook in to rescuing exceptions and to make it easy to [post notifications to tools such as Airbrake](#tracking-errors-w-airbrake-honeybadger-or-bugsnag).
 * `RocketPants::StrongParameters` - Adds support for strong parameters.
 
 To use RocketPants, instead of inheriting from `ActionController::Base`, just inherit from `RocketPants::Base`.
@@ -308,7 +308,7 @@ Finally, in the routes - the easiest way would be in the api declaration:
 
 ```ruby
 api versions: 1, module: "api/v1" do
-  resources :users, only: [:index]  
+  resources :users, only: [:index]
 end
 ```
 
@@ -555,6 +555,33 @@ One of the newer features of Rocket Pants, if you have the Strong Parameters plu
 or are using Rails 4, is that we'll automatically rescue strong parameters errors and render them
 as `bad_request` API errors to the requesting users.
 
+### Tracking errors w/ Airbrake, Honeybadger or Bugsnag
+
+Since Rocket Pants automatically rescues server errors, you'll additionally need to configure tracking them if you want to be warned when they happen.
+
+Rocket Pants comes with built in support for [Airbrake](https://airbrake.io/), [Honeybadger](https://www.honeybadger.io/) and [Bugsnag](https://bugsnag.com/). Depending on your prefered tracking solution, in your base controller add this:
+
+```ruby
+class ApplicationController < RocketPants::Base
+  # Airbrake
+  use_named_exception_notifier :airbrake
+  # or Honeybadger
+  use_named_exception_notifier :honeybadger
+  # or Bugsnag
+  use_named_exception_notifier :bugsnag
+end
+```
+
+If you're using some other service, you can add a custom notifier:
+
+```ruby
+class ApplicationController < RocketPants::Base
+  self.exception_notifier_callback = lambda do |controller, exception, request|
+    # track errors
+  end
+end
+```
+
 ## Implementing Efficient Validation
 
 One of the core design principles built into RocketPants is simple support for "Efficient Validation" as described in the [Rack::Cache FAQ](http://rtomayko.github.com/rack-cache/faq) - Namely, it adds simple support for object-level caching using etags with fast verification thanks to the `RocketPants::CacheMiddleware` cache middleware.
@@ -660,6 +687,12 @@ Inside the `RSpec.configure do |config|` block.
 - [Aron Hegyi](https://github.com/ahegyi) - Doc tweaks for `:invalid_resource`.
 - [Manuel Meurer](https://github.com/manuelmeurer) for Doc tweaks.
 - [Travis Pew](https://github.com/travisp) for initial RSpec v3 support.
+- [Brandt Lareau](https://github.com/newdark) for RSpec v3 fixes.
+- [David Pedersen](https://github.com/davidpdrsn) for Rails 4.2 fixes.
+- [Damir Svrtan](https://github.com/DamirSvrtan) for Travis CI fixes.
+- [Michael Chrisco](https://github.com/michaelachrisco) for spelling fixes.
+- [Kevin Jalbert](https://github.com/kevinjalbert) for spelling fixes.
+- [Damir Svrtan](https://github.com/DamirSvrtan) for support for bugsnag, docs and tests.
 
 If you're not on this list and thing you should be, let @Sutto know.
 

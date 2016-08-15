@@ -39,6 +39,16 @@ describe RocketPants::Base do
         content[:count].should == 5
       end
 
+      it 'should let you expose a scope' do
+        1.upto(5) do |offset|
+          User.create :age => (18 + offset)
+        end
+        mock(TestController).test_data { User.where('1 = 1') }
+        get :test_data
+        content[:response].should == User.all.map(&:serializable_hash)
+        content[:count].should == 5
+      end
+
     end
 
     context 'with a invalid model' do
@@ -137,7 +147,7 @@ describe RocketPants::Base do
 
     it 'should correctly convert an object with a serializable hash method' do
       object = {:a => 1, :b => 2}
-      stub(object).serializable_hash(anything) { {:serialised => true}}
+      def object.serializable_hash(*); {:serialised => true}; end
       mock(TestController).test_data { object }
       get :test_data
       content[:response].should == {'serialised' => true}
@@ -421,7 +431,7 @@ describe RocketPants::Base do
       get :test_head
       response.status.should == 201
       response.body.should be_blank
-      response.content_type.should == 'application/json'
+      response.content_type.should include 'application/json'
     end
 
   end
